@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   AlertTriangle,
   ZapOff,
@@ -16,15 +16,18 @@ import {
   XCircle,
   ArrowRightLeft,
   RotateCcw,
+  Gauge,
+  SortDesc,
 } from 'lucide-react';
 import { useStore } from '../store';
 import type { Alert, Vehicle, DisposalStep } from '../types';
 import { alertTypeLabel, formatDateTime, formatDurationMinutes, formatTime } from '../utils/format';
 
+type SortMode = 'priority' | 'time';
+
 interface StepProps {
   step: DisposalStep;
   alertId: string;
-  vehicle: Vehicle;
 }
 
 function DisposalStepItem({ step, alertId }: StepProps) {
@@ -102,9 +105,10 @@ interface AlertItemProps {
   vehicle: Vehicle;
   isOpen: boolean;
   onToggle: () => void;
+  priorityScore: number;
 }
 
-function AlertItem({ alert, vehicle, isOpen, onToggle }: AlertItemProps) {
+function AlertItem({ alert, vehicle, isOpen, onToggle, priorityScore }: AlertItemProps) {
   const currentOperator = useStore((s) => s.currentOperator);
   const assignAlert = useStore((s) => s.assignAlert);
   const closeAlert = useStore((s) => s.closeAlert);
@@ -147,6 +151,16 @@ function AlertItem({ alert, vehicle, isOpen, onToggle }: AlertItemProps) {
             <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-sm ${isCritical ? 'bg-cyber-red/20 text-cyber-red' : 'bg-cyber-orange/20 text-cyber-orange'}`}>
               {alertTypeLabel(alert.type)}
             </span>
+            {priorityScore >= 80 && (
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-cyber-red/30 text-cyber-red animate-blink">
+                P0 紧急
+              </span>
+            )}
+            {priorityScore >= 50 && priorityScore < 80 && (
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-cyber-orange/20 text-cyber-orange">
+                P1 优先
+              </span>
+            )}
             {alert.status === 'closed' && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-cyber-green/20 text-cyber-green">已闭环</span>}
             {alert.status === 'handover' && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-cyber-blue/20 text-cyber-blue">转下一班</span>}
           </div>
@@ -156,6 +170,8 @@ function AlertItem({ alert, vehicle, isOpen, onToggle }: AlertItemProps) {
             <span>{formatTime(alert.startTime)} 触发</span>
             <span>·</span>
             <span className="font-mono text-cyber-orange">{formatDurationMinutes(elapsed)}</span>
+            <span>·</span>
+            <span className="font-mono">温度差 {Math.abs(vehicle.currentTemp - vehicle.targetTemp).toFixed(1)}°C</span>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -176,7 +192,7 @@ function AlertItem({ alert, vehicle, isOpen, onToggle }: AlertItemProps) {
             <div className="text-[11px] text-slate-400">位置：<span className="text-slate-200">{vehicle.currentLocation}</span></div>
             <div className="text-[11px] text-slate-400">货主：<span className="text-slate-200">{vehicle.cargoOwner}</span></div>
             <div className="text-[11px] text-slate-400">批次：<span className="font-mono">{vehicle.batchNo.slice(-10)}</span></div>
-            <div className="text-[11px] text-slate-400">当前温度：<span className={`font-mono font-bold ${isCritical ? 'text-cyber-red' : 'text-cyber-orange'}`}>{vehicle.currentTemp}°C</span></div>
+            <div className="text-[11px] text-slate-400">当前温度：<span className={`font-mono font-bold ${isCritical ? 'text-cyber-red' : 'text-cyber-orange'}`}>{vehicle.currentTemp}°C</span> / 目标{vehicle.targetTemp}°C</div>
             <div className="text-[11px] text-slate-400">持续时长：<span className="font-mono text-cyber-red">{formatDurationMinutes(vehicle.powerOffMinutes || elapsed)}</span></div>
           </div>
 
@@ -194,7 +210,7 @@ function AlertItem({ alert, vehicle, isOpen, onToggle }: AlertItemProps) {
               </div>
               <div className="space-y-1">
                 {alert.steps.map((s) => (
-                  <DisposalStepItem key={s.id} step={s} alertId={alert.id} vehicle={vehicle} />
+                  <DisposalStepItem key={s.id} step={s} alertId={alert.id} />
                 ))}
               </div>
 
@@ -246,14 +262,45 @@ export default function AlertConsole() {
   const vehicles = useStore((s) => s.vehicles);
   const selectedAlertId = useStore((s) => s.selectedAlertId);
   const setSelectedAlert = useStore((s) => s.setSelectedAlert);
+  const [sortMode, setSortMode] = useState<SortMode>('priority');
 
-  const sortedAlerts = [...alerts].sort((a, b) => {
-    const levelOrder = { critical: 0, warning: 1 };
-    if (levelOrder[a.level] !== levelOrder[b.level]) return levelOrder[a.level] - levelOrder[b.level];
-    const statusOrder = { open: 0, processing: 1, handover: 2, closed: 3 };
-    if (statusOrder[a.status] !== statusOrder[b.status]) return statusOrder[a.status] - statusOrder[b.status];
-    return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
-  });
+  const computePriority = (alert: Alert, vehicle: Vehicle): number => {
+    let score = 0;
+    if (alert.level === 'critical') score += 40;
+    const elapsed = Math.floor((Date.now() - new Date(alert.startTime).getTime()) / 60000);
+    score += Math.min(40, elapsed);
+    const tempDiff = Math.abs(vehicle.currentTemp - vehicle.targetTemp);
+    score += Math.min(20, tempDiff * 2);
+    return score;
+  };
+
+  const sortedAlerts = useMemo(() => {
+    const list = alerts
+      .map((a) => {
+        const v = vehicles.find((veh) => veh.id === a.vehicleId);
+        return { alert: a, vehicle: v, priority: v ? computePriority(a, v) : 0 };
+      })
+      .filter((x) => x.vehicle);
+
+    if (sortMode === 'priority') {
+      list.sort((a, b) => {
+        const statusOrder: Record<string, number> = { open: 0, processing: 1, handover: 2, closed: 3 };
+        if (statusOrder[a.alert.status] !== statusOrder[b.alert.status]) {
+          return statusOrder[a.alert.status] - statusOrder[b.alert.status];
+        }
+        return b.priority - a.priority;
+      });
+    } else {
+      list.sort((a, b) => {
+        const statusOrder: Record<string, number> = { open: 0, processing: 1, handover: 2, closed: 3 };
+        if (statusOrder[a.alert.status] !== statusOrder[b.alert.status]) {
+          return statusOrder[a.alert.status] - statusOrder[b.alert.status];
+        }
+        return new Date(a.alert.startTime).getTime() - new Date(b.alert.startTime).getTime();
+      });
+    }
+    return list;
+  }, [alerts, vehicles, sortMode]);
 
   const openCount = alerts.filter((a) => a.status === 'open').length;
   const processingCount = alerts.filter((a) => a.status === 'processing').length;
@@ -266,27 +313,45 @@ export default function AlertConsole() {
           <AlertTriangle size={16} className="text-cyber-orange" />
           <h2 className="text-sm font-bold tracking-wider uppercase text-cyber-cyan">告警处置台</h2>
         </div>
-        <div className="flex items-center gap-2 text-[10px] font-mono">
-          <span className="px-1.5 py-0.5 rounded-sm bg-cyber-red/20 text-cyber-red">{openCount}待接</span>
-          <span className="px-1.5 py-0.5 rounded-sm bg-cyber-orange/20 text-cyber-orange">{processingCount}处置中</span>
-          <span className="px-1.5 py-0.5 rounded-sm bg-cyber-green/20 text-cyber-green">{closedCount}已闭环</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-deep-sea-800 rounded-sm overflow-hidden border border-cyber-cyan/20">
+            <button
+              onClick={() => setSortMode('priority')}
+              className={`px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-all flex items-center gap-1 ${
+                sortMode === 'priority' ? 'bg-cyber-cyan/20 text-cyber-cyan' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Gauge size={11} />优先级
+            </button>
+            <button
+              onClick={() => setSortMode('time')}
+              className={`px-2 py-1 text-[10px] font-mono uppercase tracking-wider transition-all flex items-center gap-1 ${
+                sortMode === 'time' ? 'bg-cyber-cyan/20 text-cyber-cyan' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <SortDesc size={11} />时间
+            </button>
+          </div>
+          <span className="text-[10px] font-mono text-slate-500">|</span>
+          <span className="px-1.5 py-0.5 rounded-sm bg-cyber-red/20 text-cyber-red text-[10px] font-mono">{openCount}待接</span>
+          <span className="px-1.5 py-0.5 rounded-sm bg-cyber-orange/20 text-cyber-orange text-[10px] font-mono">{processingCount}处置中</span>
+          <span className="px-1.5 py-0.5 rounded-sm bg-cyber-green/20 text-cyber-green text-[10px] font-mono">{closedCount}已闭环</span>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin pr-1 space-y-2">
         {sortedAlerts.length === 0 && (
           <div className="text-center text-slate-500 py-8 text-sm">暂无告警</div>
         )}
-        {sortedAlerts.map((alert) => {
-          const vehicle = vehicles.find((v) => v.id === alert.vehicleId);
-          if (!vehicle) return null;
+        {sortedAlerts.map(({ alert, vehicle, priority }) => {
           const isOpen = selectedAlertId === alert.id;
           return (
             <AlertItem
               key={alert.id}
               alert={alert}
-              vehicle={vehicle}
+              vehicle={vehicle!}
               isOpen={isOpen}
               onToggle={() => setSelectedAlert(isOpen ? null : alert.id)}
+              priorityScore={priority}
             />
           );
         })}

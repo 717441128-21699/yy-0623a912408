@@ -1,4 +1,4 @@
-import type { Vehicle, Alert, HandoverLog } from '../types';
+import type { Vehicle, Alert, HandoverLog, CargoRisk } from '../types';
 
 const now = Date.now();
 
@@ -167,6 +167,7 @@ export const mockAlerts: Alert[] = [
     startTime: new Date(now - 82 * 60 * 1000).toISOString(),
     status: 'processing',
     assignee: '陈夜班',
+    totalPowerOffMinutes: 82,
     steps: [
       {
         id: 's001',
@@ -211,6 +212,7 @@ export const mockAlerts: Alert[] = [
     startTime: new Date(now - 47 * 60 * 1000).toISOString(),
     status: 'open',
     assignee: '',
+    totalPowerOffMinutes: 47,
     steps: [
       {
         id: 's004',
@@ -255,6 +257,7 @@ export const mockAlerts: Alert[] = [
     startTime: new Date(now - 20 * 60 * 1000).toISOString(),
     status: 'open',
     assignee: '',
+    totalPowerOffMinutes: 0,
     steps: [
       {
         id: 's007',
@@ -299,6 +302,7 @@ export const mockAlerts: Alert[] = [
     startTime: new Date(now - 12 * 60 * 1000).toISOString(),
     status: 'open',
     assignee: '',
+    totalPowerOffMinutes: 0,
     steps: [
       {
         id: 's010',
@@ -337,6 +341,22 @@ export const mockAlerts: Alert[] = [
   },
 ];
 
+export const mockCargoRisks: CargoRisk[] = [
+  {
+    id: 'r001',
+    vehicleId: 'v005',
+    plateNumber: '苏A·9X334',
+    description: '冷冻水饺批次JD-F20260620-0445，断电超1小时，中心温度需重点抽检',
+    level: 'high',
+    status: 'pending_inspection',
+    batchNo: 'JD-F20260620-0445',
+    powerOffMinutes: 82,
+    createdAt: new Date(now - 75 * 60 * 1000).toISOString(),
+    updatedAt: new Date(now - 75 * 60 * 1000).toISOString(),
+    operator: '陈夜班',
+  },
+];
+
 export const mockHandoverLogs: HandoverLog[] = [
   {
     id: 'h001',
@@ -344,13 +364,40 @@ export const mockHandoverLogs: HandoverLog[] = [
     fromOperator: '王白班',
     toOperator: '陈夜班',
     openAlerts: [],
-    recoveredVehicles: ['v010', 'v011'],
-    cargoRisks: [
-      { vehicleId: 'v010', description: '冷冻水饺批次有15分钟断电史，到货需抽检中心温度', level: 'medium' },
+    recoveredVehicles: ['v010'],
+    vehicleSummaries: [
+      {
+        vehicleId: 'v010',
+        plateNumber: '黑A·R7712',
+        route: '哈尔滨→长春',
+        cargoOwner: '中通冷链',
+        batchNo: 'ZT-F20260620-0033',
+        alertStartTime: new Date(now - 7 * 60 * 60 * 1000).toISOString(),
+        alertCloseTime: new Date(now - 6.3 * 60 * 60 * 1000).toISOString(),
+        totalPowerOffMinutes: 18,
+        stepsCompleted: 3,
+        stepsTotal: 3,
+        recoverNote: '车辆电瓶亏电，搭电后制冷恢复正常',
+        needsInspection: true,
+        riskLevel: 'medium',
+      },
     ],
-    summary: '白班整体稳定，交接2辆车需到货抽检，其余正常。',
+    cargoRisks: [
+      {
+        id: 'r000',
+        vehicleId: 'v010',
+        plateNumber: '黑A·R7712',
+        description: '冷冻水饺批次有18分钟断电史，到货需抽检中心温度',
+        level: 'medium',
+        status: 'warehouse_notified',
+        batchNo: 'ZT-F20260620-0033',
+        powerOffMinutes: 18,
+        createdAt: new Date(now - 6.2 * 60 * 60 * 1000).toISOString(),
+        updatedAt: new Date(now - 6.1 * 60 * 60 * 1000).toISOString(),
+        operator: '王白班',
+      },
+    ],
+    summary: '白班整体稳定，1辆车恢复制冷，已通知长春仓到货抽检，其余正常。',
     confirmed: true,
   },
 ];
-
-export const recoveredVehicleIds: string[] = ['v012', 'v015'];

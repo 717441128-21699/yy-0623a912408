@@ -19,17 +19,11 @@ const TEMP_ZONE_LABELS: Record<string, string> = {
 
 export default function VehicleWall() {
   const vehicles = useStore((s) => s.vehicles);
-  const selectedAlertId = useStore((s) => s.selectedAlertId);
-  const setSelectedAlert = useStore((s) => s.setSelectedAlert);
-  const alerts = useStore((s) => s.alerts);
+  const selectedVehicleId = useStore((s) => s.selectedVehicleId);
+  const setSelectedVehicle = useStore((s) => s.setSelectedVehicle);
 
   const [groupBy, setGroupBy] = useState<GroupKey>('route');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-
-  const selectedVehicleId = useMemo(() => {
-    if (!selectedAlertId) return null;
-    return alerts.find((a) => a.id === selectedAlertId)?.vehicleId ?? null;
-  }, [selectedAlertId, alerts]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof vehicles>();
@@ -54,10 +48,7 @@ export default function VehicleWall() {
   }, [grouped]);
 
   const handleCardClick = (vehicleId: string) => {
-    const alert = alerts.find((a) => a.vehicleId === vehicleId);
-    if (alert) {
-      setSelectedAlert(alert.id);
-    }
+    setSelectedVehicle(vehicleId);
   };
 
   const poweroffCount = vehicles.filter((v) => v.status === 'poweroff').length;
